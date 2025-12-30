@@ -1,10 +1,9 @@
 """
-Temporal Recon v5.9 - External Tools
-====================================
+ArchiveWraith - External Tools
+==============================
 Wayback-Only Mode:
 - subfinder + assetfinder (subdomain discovery)
 - Wayback CDX API (Direct Wayback URLs - MORE coverage!)
-- uro (URL deduplication)
 
 NO httpx, NO puredns, NO live check
 """

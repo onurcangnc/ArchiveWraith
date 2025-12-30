@@ -1,6 +1,6 @@
 """
-Temporal Recon v5.7 - URL Filtering
-===================================
+ArchiveWraith - URL Filtering
+==============================
 Extension filter + Wordlist path filter
 """
 import re

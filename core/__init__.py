@@ -1,5 +1,5 @@
 """
-HistoryFinder Core Module
+ArchiveWraith Core Module
 """
 from .scanner import run_scan, fetch_cdx, run_recon_pipeline
 from .tools import is_root_domain, run_subdomain_discovery, run_wayback_cdx, filter_urls

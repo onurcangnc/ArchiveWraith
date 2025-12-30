@@ -1,6 +1,6 @@
 """
-Temporal Recon v5.8 - PDF Deep Analyzer
-=======================================
+ArchiveWraith - PDF Deep Analyzer
+==================================
 Analyzes PDF content for sensitive keywords (Turkish + English)
 Runs asynchronously after main scan completes
 

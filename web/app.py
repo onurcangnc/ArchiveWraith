@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-Temporal Recon v5.8 - Smart Recon & Recovery Platform
-======================================================
+ArchiveWraith - Smart Recon & Recovery Platform
+===============================================
 Features:
 - Server-side severity filtering
 - PDF filtering (only show PDFs with secrets)
 - Port normalization in subdomain stats
 - PDF Deep Analysis with progress tracking
+
+Like a wraith in the archives - invisible, silent, deadly.
 """
 import os
 import sys
@@ -370,7 +372,7 @@ init_db()
 
 if __name__ == '__main__':
     print("\n" + "="*60)
-    print("Temporal Recon v5.8 - Smart Recon & Recovery Platform")
+    print("ArchiveWraith - Smart Recon & Recovery Platform")
     print("="*60)
     print(f"[*] Database: {'PostgreSQL' if USE_POSTGRES else 'SQLite'}")
     print(f"[*] Wordlist: {len(SENSITIVE_PATHS):,} paths")

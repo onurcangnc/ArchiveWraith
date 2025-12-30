@@ -1,6 +1,6 @@
 """
-Temporal Recon v5.9 - Wayback-Only Scan Worker
-================================================
+ArchiveWraith - Wayback-Only Scan Worker
+=========================================
 NO Live Check - Wayback Machine Only!
 1. Subdomain Discovery
 2. Wayback CDX API (Direct Wayback URLs - MAXIMUM COVERAGE!)

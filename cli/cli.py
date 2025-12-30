@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-HistoryFinder CLI - Temporal Recon v5.9
+ArchiveWraith CLI
 100% Stealth Wayback Machine Reconnaissance Tool
+Like a wraith in the archives - invisible, silent, deadly.
 """
 import argparse
 import sys
@@ -21,8 +22,9 @@ def print_banner():
     """Print tool banner"""
     print("""
 ╔══════════════════════════════════════════════════════════════╗
-║         HistoryFinder v5.9 - Stealth Wayback Recon          ║
+║         ArchiveWraith - Stealth Wayback Recon                ║
 ║     100% Passive - Zero Requests to Target Servers          ║
+║        Like a wraith in the archives...                      ║
 ╚══════════════════════════════════════════════════════════════╝
     """)
 
@@ -215,8 +217,8 @@ def cmd_urls(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        prog='historyfinder',
-        description='HistoryFinder v5.9 - 100% Stealth Wayback Recon',
+        prog='archivewraith',
+        description='ArchiveWraith - 100% Stealth Wayback Recon',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -232,7 +234,7 @@ Rate Limiting:
   - Large scans: 14K domains ~4 hours
   - Exponential backoff on 429/503 errors
 
-For more info: https://github.com/yourusername/HistoryFinder
+For more info: https://github.com/yourusername/ArchiveWraith
         """
     )
 
@@ -258,7 +260,7 @@ For more info: https://github.com/yourusername/HistoryFinder
     urls_parser.add_argument('-t', '--timeout', type=int, default=60, help='Timeout in seconds')
 
     # Version
-    parser.add_argument('-v', '--version', action='version', version='HistoryFinder v5.9')
+    parser.add_argument('-v', '--version', action='version', version='ArchiveWraith v1.0')
 
     args = parser.parse_args()
 

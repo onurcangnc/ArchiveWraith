@@ -1,6 +1,8 @@
-# HistoryFinder (Temporal Recon v5.9)
+# ArchiveWraith
 
 A **100% stealth** web reconnaissance tool for finding sensitive documents in Wayback Machine. Makes **zero requests** to target servers.
+
+Like a wraith in the archives - invisible, silent, deadly.
 
 ## Table of Contents
 
@@ -23,25 +25,25 @@ The application follows a **Layered Architecture** pattern with clear separation
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    Presentation Layer                    │
-│                      (app.py - Flask)                    │
+│                      (web/app.py - Flask)                │
 │  Routes, Authentication, Dashboard, Real-time updates   │
 └─────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────┐
 │                     Service Layer                        │
-│              (scanner.py + tools.py)                     │
+│              (core/scanner.py + core/tools.py)           │
 │  Pipeline orchestration, External tools, CDX API        │
 └─────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────┐
 │                      Data Layer                          │
-│                    (database.py)                         │
+│                    (core/database.py)                    │
 │  PostgreSQL/ SQLite abstraction, Scan results           │
 └─────────────────────────────────────────────────────────┘
                             ↓
 ┌─────────────────────────────────────────────────────────┐
 │                    Utility Layer                         │
-│              (filters.py + secrets.py)                   │
+│              (core/filters.py + core/secrets.py)         │
 │  URL filtering, Secret detection, PDF analysis          │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -58,7 +60,7 @@ The application follows a **Layered Architecture** pattern with clear separation
 
 ### 1. Strategy Pattern
 
-**Location:** `filters.py` - `is_sensitive()`, `calc_severity()`
+**Location:** `core/filters.py` - `is_sensitive()`, `calc_severity()`
 
 **Purpose:** Encapsulates multiple filtering/scoring algorithms
 
@@ -83,7 +85,7 @@ def is_sensitive(url):
 
 ### 2. Factory Pattern
 
-**Location:** `tools.py:34-53` - `find_tool()`
+**Location:** `core/tools.py:34-53` - `find_tool()`
 
 **Purpose:** Encapsulates external tool discovery
 
@@ -113,7 +115,7 @@ def find_tool(name, extra_paths=None):
 
 ### 3. Repository Pattern
 
-**Location:** `database.py` - `get_db()`, `update_scan()`, `save_findings()`
+**Location:** `core/database.py` - `get_db()`, `update_scan()`, `save_findings()`
 
 **Purpose:** Abstracts database operations behind a clean interface
 
@@ -131,7 +133,7 @@ def get_db():
     return sqlite3.connect(DB_PATH)
 ```
 
-### 3. Observer Pattern
+### 4. Observer Pattern
 
 **Location:** Throughout the pipeline - `callback=msg` parameter
 
@@ -151,9 +153,9 @@ def run_scan(scan_id, domain):
     urls, total_discovered_subdomains, error = fetch_cdx(domain, progress_callback)
 ```
 
-### 4. Template Method Pattern
+### 5. Template Method Pattern
 
-**Location:** `scanner.py` - `run_recon_pipeline()`
+**Location:** `core/scanner.py` - `run_recon_pipeline()`
 
 **Purpose:** Defines the skeleton of the scanning algorithm
 
@@ -172,7 +174,7 @@ def run_recon_pipeline(domain, callback=None):
     return filtered, subs_count, None
 ```
 
-### 5. Dependency Injection
+### 6. Dependency Injection
 
 **Location:** Function parameters throughout the codebase
 
@@ -218,13 +220,14 @@ def run_scan(scan_id, domain):
 - **PDF Analysis**: Deep content scanning for sensitive data
 - **PostgreSQL + SQLite**: Flexible database backend
 - **Real-time Progress**: Live updates via Server-Sent Events
+- **Bilingual**: English + Turkish keyword detection
 
 ---
 
 ## File Structure
 
 ```
-HistoryFinder/
+ArchiveWraith/
 ├── cli/                    # Command-line interface
 │   ├── cli.py              # Main CLI entry point
 │   └── __init__.py
@@ -264,8 +267,8 @@ HistoryFinder/
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/HistoryFinder.git
-cd HistoryFinder
+git clone https://github.com/yourusername/ArchiveWraith.git
+cd ArchiveWraith
 
 # Create virtual environment
 python -m venv venv
@@ -281,7 +284,7 @@ go install -v github.com/tomtomnom/assetfinder@latest
 # Configure environment variables (optional)
 export ADMIN_USER=admin
 export ADMIN_PASS=your_secure_password
-export DATABASE_URL=postgresql://user:pass@localhost/temporal_recon
+export DATABASE_URL=postgresql://user:pass@localhost/archive_wraith
 export SECRET_KEY=your-secret-key-here
 ```
 
@@ -293,20 +296,20 @@ export SECRET_KEY=your-secret-key-here
 
 ```bash
 # Copy to server
-scp -r HistoryFinder/* root@server:/opt/temportal-recon-web/
+scp -r ArchiveWraith/* root@server:/opt/archive-wraith/
 
 # SSH to server
 ssh root@server
 
-# Configure systemd service (if not already)
-cat > /etc/systemd/system/temporal-recon.service << EOF
+# Configure systemd service
+cat > /etc/systemd/system/archive-wraith.service << EOF
 [Unit]
-Description=Temporal Recon Web Application
+Description=ArchiveWraith Web Application
 After=network.target
 
 [Service]
 User=root
-WorkingDirectory=/opt/temportal-recon-web
+WorkingDirectory=/opt/archive-wraith
 Environment="PATH=/root/go/bin:/usr/local/bin:/usr/bin:/bin"
 ExecStart=/usr/bin/python3 web/app.py
 Restart=always
@@ -317,9 +320,9 @@ EOF
 
 # Restart service
 systemctl daemon-reload
-systemctl restart temporal-recon.service
-systemctl enable temporal-recon.service
-systemctl status temporal-recon.service
+systemctl restart archive-wraith.service
+systemctl enable archive-wraith.service
+systemctl status archive-wraith.service
 ```
 
 ### CLI Usage

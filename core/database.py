@@ -1,5 +1,5 @@
 """
-Temporal Recon v5.7 - Database Operations
+ArchiveWraith - Database Operations
 """
 import sqlite3
 from .config import DATABASE_URL, USE_POSTGRES, DB_PATH, DEFAULT_USER, DEFAULT_PASS_HASH
