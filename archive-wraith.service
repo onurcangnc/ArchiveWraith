@@ -1,0 +1,19 @@
+[Unit]
+Description=ArchiveWraith - 100% Stealth Wayback Recon with Smart URL Filtering
+Documentation=https://github.com/yourusername/ArchiveWraith
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/temportal-recon-web
+Environment="PATH=/opt/temportal-recon-web/venv/bin:/usr/local/bin:/root/go/bin"
+Environment="DATABASE_URL=postgresql://postgres:Alvin1302*@localhost/temporal_recon"
+ExecStart=/usr/bin/python3 app.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
