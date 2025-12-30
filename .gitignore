@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+venv_wsl/
+ENV/
+env/
+*.egg-info/
+dist/
+build/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Sensitive files (never commit these!)
+*.env
+.env.local
+.env.production
+config_local.py
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+temp_*/
+scans/
+
+# Wordlist (optional - large file)
+# wordlist.txt
+
+# Claude
+.claude/

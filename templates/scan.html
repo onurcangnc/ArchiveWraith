@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ scan['domain'] }} - Temporal Recon</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
+            color: #e4e4e4;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: rgba(0,0,0,0.4);
+            padding: 1rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .header h1 { font-size: 1.3rem; color: #00d4ff; display: flex; align-items: center; gap: 0.5rem; }
+        .header h1 span { font-size: 0.65rem; color: #666; font-weight: 400; }
+        .header-actions { display: flex; gap: 0.5rem; align-items: center; }
+        .btn {
+            padding: 0.5rem 0.8rem;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 0.8rem;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+        .btn-back { background: rgba(255,255,255,0.1); color: #e4e4e4; }
+        .btn-back:hover { background: rgba(255,255,255,0.2); }
+        .btn-delete { background: rgba(255,59,48,0.2); color: #ff6b6b; }
+
+        .container { display: flex; min-height: calc(100vh - 60px); }
+
+        .sidebar {
+            width: 280px;
+            background: rgba(0,0,0,0.3);
+            border-right: 1px solid rgba(255,255,255,0.08);
+            padding: 1.2rem;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+        .sidebar h3 {
+            color: #888;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .sidebar h3 .count {
+            background: rgba(0,212,255,0.2);
+            color: #00d4ff;
+            padding: 0.2rem 0.5rem;
+            border-radius: 10px;
+            font-size: 0.7rem;
+        }
+        .subdomain-filter {
+            width: 100%;
+            padding: 0.6rem 1rem;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            color: #e4e4e4;
+            margin-bottom: 1rem;
+            font-size: 0.85rem;
+        }
+        .subdomain-filter:focus { outline: none; border-color: #00d4ff; }
+        .subdomain-list { list-style: none; max-height: calc(100vh - 200px); overflow-y: auto; }
+        .subdomain-item {
+            padding: 0.6rem 0.8rem;
+            border-radius: 8px;
+            margin-bottom: 0.3rem;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.8rem;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+        }
+        .subdomain-item:hover { background: rgba(255,255,255,0.08); }
+        .subdomain-item.active { background: rgba(0,212,255,0.15); border-color: rgba(0,212,255,0.3); }
+        .subdomain-item .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 140px; }
+        .subdomain-item .count { display: flex; gap: 0.25rem; }
+        .subdomain-item .badge { padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.65rem; font-weight: 600; }
+        .badge-critical { background: rgba(255,59,48,0.25); color: #ff6b6b; }
+        .badge-high { background: rgba(255,149,0,0.25); color: #ffa500; }
+        .badge-medium { background: rgba(0,122,255,0.25); color: #4da6ff; }
+
+        .sidebar-toggle {
+            display: none;
+            position: fixed;
+            bottom: 1.5rem;
+            right: 1.5rem;
+            width: 56px;
+            height: 56px;
+            background: linear-gradient(135deg, #00d4ff, #00ff88);
+            border: none;
+            border-radius: 50%;
+            color: #000;
+            font-size: 1.5rem;
+            cursor: pointer;
+            z-index: 200;
+            box-shadow: 0 4px 20px rgba(0,212,255,0.4);
+        }
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 150;
+        }
+
+        .main { flex: 1; padding: 1.5rem; overflow-y: auto; min-width: 0; }
+
+        .domain-header {
+            background: linear-gradient(135deg, rgba(0,212,255,0.1) 0%, rgba(0,255,136,0.05) 100%);
+            border: 1px solid rgba(0,212,255,0.2);
+            border-radius: 16px;
+            padding: 1.2rem 1.5rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        .domain-info { flex: 1; }
+        .domain-title { font-size: 1.4rem; color: #fff; margin-bottom: 0.4rem; font-weight: 600; word-break: break-all; }
+        .domain-meta { color: #888; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem; }
+        .domain-meta.running { color: #ffa500; }
+        .domain-meta.completed { color: #4ade80; }
+        .domain-meta.error { color: #ff6b6b; }
+        
+        .domain-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+        .pdf-btn {
+            padding: 0.6rem 1rem;
+            background: linear-gradient(135deg, rgba(168,85,247,0.3), rgba(139,92,246,0.3));
+            border: 1px solid rgba(168,85,247,0.4);
+            border-radius: 10px;
+            color: #c4b5fd;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .pdf-btn:hover { background: linear-gradient(135deg, rgba(168,85,247,0.4), rgba(139,92,246,0.4)); transform: translateY(-2px); }
+        .pdf-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .pdf-btn .count { background: rgba(168,85,247,0.3); padding: 0.15rem 0.4rem; border-radius: 6px; font-size: 0.7rem; }
+
+        /* Progress Sections */
+        .progress-section {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 1.2rem;
+            margin-bottom: 1.5rem;
+        }
+        .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem; flex-wrap: wrap; gap: 0.5rem; }
+        .progress-title { font-size: 1rem; color: #fff; font-weight: 600; }
+        .progress-eta { background: linear-gradient(135deg, rgba(0,212,255,0.2), rgba(0,255,136,0.2)); padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.75rem; color: #00d4ff; }
+        .progress-bar-container { background: rgba(255,255,255,0.1); border-radius: 10px; height: 24px; overflow: hidden; margin-bottom: 0.8rem; }
+        .progress-bar { height: 100%; background: linear-gradient(90deg, #00d4ff, #00ff88); border-radius: 10px; transition: width 0.5s ease; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 600; color: #000; min-width: 45px; }
+        .progress-bar.pdf { background: linear-gradient(90deg, #a855f7, #ec4899); }
+        .progress-step { background: rgba(255,255,255,0.05); padding: 0.7rem 1rem; border-radius: 8px; font-size: 0.8rem; color: #ccc; font-family: 'SF Mono', monospace; }
+
+        /* PDF Progress */
+        .pdf-progress-section {
+            background: linear-gradient(135deg, rgba(168,85,247,0.1), rgba(236,72,153,0.05));
+            border: 1px solid rgba(168,85,247,0.3);
+        }
+        .pdf-progress-section .progress-title { color: #c4b5fd; }
+        .pdf-progress-section .progress-eta { background: linear-gradient(135deg, rgba(168,85,247,0.3), rgba(236,72,153,0.2)); color: #e879f9; }
+
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.8rem; margin-bottom: 1.5rem; }
+        .stat-card { background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 0.8rem 0.5rem; text-align: center; }
+        .stat-value { font-size: 1.4rem; font-weight: 700; margin-bottom: 0.2rem; }
+        .stat-label { font-size: 0.6rem; color: #888; text-transform: uppercase; }
+        .stat-card.critical .stat-value { color: #ff6b6b; }
+        .stat-card.high .stat-value { color: #ffa500; }
+        .stat-card.medium .stat-value { color: #4da6ff; }
+        .stat-card.recovered .stat-value { color: #a855f7; }
+        .stat-card.secrets .stat-value { color: #f472b6; }
+        .stat-card.live .stat-value { color: #4ade80; }
+
+        .search-section { background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 1rem 1.2rem; margin-bottom: 1.5rem; }
+        .search-box { display: flex; gap: 0.6rem; }
+        .search-input { flex: 1; padding: 0.7rem 1rem; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; color: #e4e4e4; font-size: 0.9rem; min-width: 0; }
+        .search-input:focus { outline: none; border-color: #00d4ff; }
+        .search-btn { padding: 0.7rem 1.2rem; background: linear-gradient(135deg, #00d4ff, #00ff88); color: #000; border: none; border-radius: 10px; cursor: pointer; font-weight: 600; }
+        .search-examples { margin-top: 0.7rem; font-size: 0.75rem; color: #666; }
+        .search-examples code { background: rgba(255,255,255,0.08); padding: 0.2rem 0.5rem; border-radius: 4px; cursor: pointer; margin: 0.2rem 0.1rem; display: inline-block; }
+        .search-examples code:hover { background: rgba(0,212,255,0.2); color: #00d4ff; }
+
+        .findings-section { background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 1.2rem; }
+        .findings-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem; }
+        .findings-title { font-size: 1rem; font-weight: 600; }
+        .findings-count { color: #888; font-size: 0.85rem; }
+
+        .tabs { display: flex; gap: 0.4rem; margin-bottom: 1rem; overflow-x: auto; padding-bottom: 0.3rem; }
+        .tab { padding: 0.45rem 0.8rem; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; cursor: pointer; font-size: 0.75rem; color: #888; text-decoration: none; white-space: nowrap; }
+        .tab:hover { background: rgba(255,255,255,0.1); color: #ccc; }
+        .tab.active { background: rgba(0,212,255,0.15); border-color: rgba(0,212,255,0.4); color: #00d4ff; }
+
+        .finding-card { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 1rem; margin-bottom: 0.8rem; }
+        .finding-card:hover { background: rgba(255,255,255,0.05); }
+        .finding-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
+        
+        .finding-severity { padding: 0.3rem 0.6rem; border-radius: 6px; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; }
+        .severity-critical { background: rgba(255,59,48,0.25); color: #ff6b6b; }
+        .severity-high { background: rgba(255,149,0,0.25); color: #ffa500; }
+        .severity-medium { background: rgba(0,122,255,0.25); color: #4da6ff; }
+        
+        .finding-status { padding: 0.3rem 0.6rem; border-radius: 6px; font-size: 0.65rem; font-weight: 600; }
+        .status-live { background: rgba(52,199,89,0.2); color: #4ade80; }
+        .status-recovered { background: rgba(168,85,247,0.2); color: #a855f7; }
+        .status-auth { background: rgba(255,204,0,0.2); color: #ffcc00; }
+        .status-forbidden { background: rgba(255,59,48,0.2); color: #ff6b6b; }
+        .status-error { background: rgba(255,149,0,0.2); color: #ffa500; }
+        .status-dead { background: rgba(255,255,255,0.1); color: #888; }
+        
+        .status-code-badge { padding: 0.2rem 0.4rem; border-radius: 4px; font-size: 0.6rem; font-weight: 600; font-family: monospace; }
+        .code-2xx { background: rgba(52,199,89,0.15); color: #4ade80; }
+        .code-3xx { background: rgba(0,122,255,0.15); color: #4da6ff; }
+        .code-4xx { background: rgba(255,149,0,0.15); color: #ffa500; }
+        .code-5xx { background: rgba(255,59,48,0.15); color: #ff6b6b; }
+
+        .finding-url { font-family: monospace; font-size: 0.8rem; word-break: break-all; color: #00d4ff; text-decoration: none; display: block; margin-top: 0.5rem; }
+        .finding-url:hover { text-decoration: underline; }
+        
+        .finding-meta { display: flex; gap: 0.8rem; font-size: 0.75rem; color: #666; margin-top: 0.5rem; flex-wrap: wrap; }
+        .finding-meta a { color: #a855f7; text-decoration: none; }
+        .finding-meta a:hover { text-decoration: underline; }
+        
+        .secret-badge { background: rgba(244,114,182,0.2); color: #f472b6; padding: 0.2rem 0.5rem; border-radius: 6px; font-size: 0.65rem; font-weight: 600; }
+        .pdf-secret-badge { background: rgba(168,85,247,0.2); color: #c4b5fd; }
+
+        .preview-box { margin-top: 0.7rem; padding: 0.7rem 0.9rem; border-radius: 8px; font-family: monospace; font-size: 0.7rem; word-break: break-all; line-height: 1.5; }
+        .preview-secret { background: rgba(244,114,182,0.1); border: 1px solid rgba(244,114,182,0.2); color: #f472b6; }
+        .preview-wayback { background: rgba(168,85,247,0.1); border: 1px solid rgba(168,85,247,0.2); color: #c4b5fd; }
+        .preview-wayback a { color: #a855f7; }
+        .preview-wayback .wayback-link { display: block; margin-bottom: 0.5rem; padding-bottom: 0.5rem; border-bottom: 1px solid rgba(168,85,247,0.2); }
+        .preview-status { background: rgba(255,149,0,0.1); border: 1px solid rgba(255,149,0,0.2); color: #fbbf24; }
+        .preview-pdf { background: rgba(168,85,247,0.1); border: 1px solid rgba(168,85,247,0.2); color: #c4b5fd; }
+
+        .pagination { display: flex; justify-content: center; gap: 0.4rem; margin-top: 1.5rem; flex-wrap: wrap; }
+        .page-btn { padding: 0.5rem 0.9rem; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #888; text-decoration: none; font-size: 0.8rem; }
+        .page-btn:hover { background: rgba(255,255,255,0.1); }
+        .page-btn.active { background: rgba(0,212,255,0.2); border-color: #00d4ff; color: #00d4ff; }
+
+        .empty-state { text-align: center; padding: 2.5rem 1rem; color: #666; }
+        .empty-state .icon { font-size: 2.5rem; margin-bottom: 0.8rem; }
+
+        .error-banner { background: rgba(255,59,48,0.1); border: 1px solid rgba(255,59,48,0.3); border-radius: 12px; padding: 1rem 1.2rem; margin-bottom: 1.5rem; color: #ff6b6b; }
+
+        /* Toast notification */
+        .toast { position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.9); border: 1px solid rgba(168,85,247,0.4); padding: 1rem 1.5rem; border-radius: 12px; color: #c4b5fd; font-size: 0.9rem; z-index: 1000; display: none; }
+        .toast.show { display: block; animation: slideUp 0.3s ease; }
+        @keyframes slideUp { from { opacity: 0; transform: translateX(-50%) translateY(20px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+
+        @media (max-width: 768px) {
+            .header { padding: 0.8rem 1rem; }
+            .header h1 { font-size: 1.1rem; }
+            .header h1 span { display: none; }
+            .container { flex-direction: column; }
+            .sidebar { position: fixed; top: 0; left: -100%; width: 85%; max-width: 300px; height: 100vh; z-index: 175; transition: left 0.3s ease; }
+            .sidebar.open { left: 0; }
+            .sidebar-toggle { display: flex; align-items: center; justify-content: center; }
+            .sidebar-overlay.open { display: block; }
+            .main { padding: 1rem; }
+            .domain-header { flex-direction: column; align-items: flex-start; }
+            .stats-grid { grid-template-columns: repeat(4, 1fr); gap: 0.5rem; }
+            .stat-card { padding: 0.6rem 0.3rem; }
+            .stat-value { font-size: 1.2rem; }
+            .search-box { flex-direction: column; }
+            .search-btn { width: 100%; }
+        }
+
+        @media (max-width: 480px) {
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .domain-title { font-size: 1.1rem; }
+            .pdf-btn { font-size: 0.7rem; padding: 0.5rem 0.8rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🕐 Temporal Recon <span>v5.8</span></h1>
+        <div class="header-actions">
+            <a href="/" class="btn btn-back">← Back</a>
+            <form action="/scan/{{ scan['id'] }}/delete" method="POST" style="display:inline" onsubmit="return confirm('Delete this scan?')">
+                <button type="submit" class="btn btn-delete">🗑️</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
+    <div id="toast" class="toast"></div>
+
+    <div class="container">
+        <div class="sidebar" id="sidebar">
+            <h3>📁 Subdomains <span class="count">{{ subdomain_stats|length }}</span></h3>
+            <input type="text" class="subdomain-filter" placeholder="Filter..." id="subdomain-filter">
+            <ul class="subdomain-list">
+                <li class="subdomain-item {% if not selected_subdomain %}active{% endif %}" onclick="filterSubdomain('')">
+                    <span class="name">🌐 All</span>
+                    <span class="badge badge-critical">{{ total_results }}</span>
+                </li>
+                {% for stat in subdomain_stats %}
+                <li class="subdomain-item {% if selected_subdomain == stat['subdomain'] %}active{% endif %}"
+                    onclick="filterSubdomain('{{ stat['subdomain'] }}')" data-subdomain="{{ stat['subdomain'] }}">
+                    <span class="name" title="{{ stat['subdomain'] }}">{{ stat['subdomain'] }}</span>
+                    <div class="count">
+                        {% if stat['critical'] > 0 %}<span class="badge badge-critical">{{ stat['critical'] }}</span>{% endif %}
+                        {% if stat['high'] > 0 %}<span class="badge badge-high">{{ stat['high'] }}</span>{% endif %}
+                        {% if stat['medium'] > 0 %}<span class="badge badge-medium">{{ stat['medium'] }}</span>{% endif %}
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <button class="sidebar-toggle" onclick="toggleSidebar()">📁</button>
+
+        <div class="main">
+            <div class="domain-header">
+                <div class="domain-info">
+                    <h2 class="domain-title">{{ scan['domain'] }}</h2>
+                    <p class="domain-meta {{ scan['status'] }}">
+                        {% if scan['status'] == 'running' %}🔄 Scanning...
+                        {% elif scan['status'] == 'completed' %}✅ Completed in {{ scan['duration'] or 0 }}s
+                        {% elif scan['status'] == 'error' %}❌ {{ scan['error_message'][:50] if scan['error_message'] else 'Error' }}
+                        {% else %}⏳ {{ scan['status'] }}{% endif %}
+                    </p>
+                </div>
+                <div class="domain-actions">
+                    {% if scan['status'] == 'completed' and pdf_count > 0 %}
+                    <button class="pdf-btn" onclick="startPdfAnalysis()" id="pdf-btn">
+                        📄 Deep Scan PDFs <span class="count">{{ pdf_count }}</span>
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Main Scan Progress -->
+            <div class="progress-section" id="progress-section" style="{% if scan['status'] != 'running' %}display:none{% endif %}">
+                <div class="progress-header">
+                    <span class="progress-title">📊 Scan Progress</span>
+                    <span class="progress-eta" id="progress-eta">ETA: --</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar" id="progress-bar" style="width: 0%">0%</div>
+                </div>
+                <div class="progress-step"><span>⏳</span> <span id="step-text">{{ scan['step'] or 'Initializing...' }}</span></div>
+            </div>
+
+            <!-- PDF Analysis Progress -->
+            <div class="progress-section pdf-progress-section" id="pdf-progress-section" style="display:none">
+                <div class="progress-header">
+                    <span class="progress-title">📄 PDF Analysis</span>
+                    <span class="progress-eta" id="pdf-progress-stats">0 / 0</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar pdf" id="pdf-progress-bar" style="width: 0%">0%</div>
+                </div>
+                <div class="progress-step">
+                    <span>🔍</span> 
+                    <span id="pdf-step-text">Analyzing PDFs for sensitive content...</span>
+                </div>
+            </div>
+
+            {% if scan['status'] == 'error' %}
+            <div class="error-banner">
+                <h3>⚠️ Scan Error</h3>
+                <p>{{ scan['error_message'] or 'Unknown error' }}</p>
+            </div>
+            {% endif %}
+
+            <div class="stats-grid">
+                <div class="stat-card"><div class="stat-value" id="stat-total">{{ scan['total_urls'] or 0 }}</div><div class="stat-label">Total</div></div>
+                <div class="stat-card live"><div class="stat-value" id="stat-live">{{ scan['live_urls'] or 0 }}</div><div class="stat-label">Live</div></div>
+                <div class="stat-card critical"><div class="stat-value" id="stat-critical">{{ scan['critical_count'] or 0 }}</div><div class="stat-label">Critical</div></div>
+                <div class="stat-card high"><div class="stat-value" id="stat-high">{{ scan['high_count'] or 0 }}</div><div class="stat-label">High</div></div>
+                <div class="stat-card medium"><div class="stat-value" id="stat-medium">{{ scan['medium_count'] or 0 }}</div><div class="stat-label">Medium</div></div>
+                <div class="stat-card recovered"><div class="stat-value" id="stat-recovered">{{ scan['recovered_count'] or 0 }}</div><div class="stat-label">Recovered</div></div>
+                <div class="stat-card secrets"><div class="stat-value" id="stat-secrets">{{ scan['secrets_count'] or 0 }}</div><div class="stat-label">Secrets</div></div>
+                <div class="stat-card"><div class="stat-value" id="stat-subdomains">{{ scan['unique_subdomains'] or 0 }}</div><div class="stat-label">Subs</div></div>
+            </div>
+
+            <div class="search-section">
+                <form method="GET" class="search-box">
+                    {% if selected_subdomain %}<input type="hidden" name="subdomain" value="{{ selected_subdomain }}">{% endif %}
+                    {% if severity_filter %}<input type="hidden" name="severity" value="{{ severity_filter }}">{% endif %}
+                    <input type="text" name="q" class="search-input" placeholder="Search URLs..." value="{{ search_query or '' }}">
+                    <button type="submit" class="search-btn">🔍 Search</button>
+                </form>
+                <div class="search-examples">
+                    <code onclick="searchFor('.env')">.env</code>
+                    <code onclick="searchFor('config')">config</code>
+                    <code onclick="searchFor('.sql')">.sql</code>
+                    <code onclick="searchFor('backup')">backup</code>
+                    <code onclick="searchFor('admin')">admin</code>
+                    <code onclick="searchFor('.git')">.git</code>
+                    <code onclick="searchFor('api')">api</code>
+                    <code onclick="searchFor('.pdf')">.pdf</code>
+                </div>
+            </div>
+
+            <div class="findings-section">
+                <div class="findings-header">
+                    <span class="findings-title">📋 Findings</span>
+                    <span class="findings-count">{{ total_results }} results</span>
+                </div>
+
+                <div class="tabs">
+                    <a href="?{% if selected_subdomain %}subdomain={{ selected_subdomain }}&{% endif %}{% if search_query %}q={{ search_query }}&{% endif %}page=1" class="tab {% if not severity_filter %}active{% endif %}">All</a>
+                    <a href="?severity=critical{% if selected_subdomain %}&subdomain={{ selected_subdomain }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}&page=1" class="tab {% if severity_filter == 'critical' %}active{% endif %}">🔴 Crit</a>
+                    <a href="?severity=high{% if selected_subdomain %}&subdomain={{ selected_subdomain }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}&page=1" class="tab {% if severity_filter == 'high' %}active{% endif %}">🟠 High</a>
+                    <a href="?severity=medium{% if selected_subdomain %}&subdomain={{ selected_subdomain }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}&page=1" class="tab {% if severity_filter == 'medium' %}active{% endif %}">🔵 Med</a>
+                    <a href="?severity=recovered{% if selected_subdomain %}&subdomain={{ selected_subdomain }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}&page=1" class="tab {% if severity_filter == 'recovered' %}active{% endif %}">📦 Rec</a>
+                    <a href="?severity=secrets{% if selected_subdomain %}&subdomain={{ selected_subdomain }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}&page=1" class="tab {% if severity_filter == 'secrets' %}active{% endif %}">🔑 Sec</a>
+                </div>
+
+                <div id="findings-list">
+                    {% if findings %}
+                        {% for f in findings %}
+                        <div class="finding-card">
+                            <div class="finding-header">
+                                <span class="finding-severity severity-{{ f['severity'] }}">{{ f['severity'] }}</span>
+                                {% if f['recovered'] %}<span class="finding-status status-recovered">📦 REC</span>
+                                {% elif f['status_code'] == 200 %}<span class="finding-status status-live">🟢 LIVE</span>
+                                {% elif f['status_code'] == 401 %}<span class="finding-status status-auth">🔐 AUTH</span>
+                                {% elif f['status_code'] == 403 %}<span class="finding-status status-forbidden">🚫 403</span>
+                                {% elif f['status_code'] == 500 %}<span class="finding-status status-error">💥 500</span>
+                                {% elif f['status_code'] and f['status_code'] < 300 %}<span class="finding-status status-live">🟢 LIVE</span>
+                                {% else %}<span class="finding-status status-dead">💀</span>{% endif %}
+                                {% if f['status_code'] %}<span class="status-code-badge {% if f['status_code'] < 300 %}code-2xx{% elif f['status_code'] < 400 %}code-3xx{% elif f['status_code'] < 500 %}code-4xx{% else %}code-5xx{% endif %}">{{ f['status_code'] }}</span>{% endif %}
+                                {% if f['secrets_found'] and 'PDF_SENSITIVE' in f['secrets_found'] %}
+                                    <span class="secret-badge pdf-secret-badge">📄 PDF</span>
+                                {% elif f['secrets_found'] %}
+                                    <span class="secret-badge">🔑</span>
+                                {% endif %}
+                            </div>
+                            <a href="{{ f['url'] }}" target="_blank" class="finding-url">{{ f['url'] }}</a>
+                            <div class="finding-meta">
+                                <span>📁 {{ f['subdomain'][:30] }}{% if f['subdomain']|length > 30 %}...{% endif %}</span>
+                                <span>📄 {{ f['extension'] or 'N/A' }}</span>
+                                {% if f['recovered'] %}<a href="https://web.archive.org/web/*/{{ f['url'] }}" target="_blank">📦 Wayback</a>{% endif %}
+                            </div>
+                            {% if f['secrets_preview'] and 'WAYBACK:' in f['secrets_preview'] %}
+                            <div class="preview-box preview-wayback">
+                                {% set wayback_url = f['secrets_preview'].split('WAYBACK:')[1].split('\n')[0].strip() %}
+                                {% if wayback_url %}<div class="wayback-link">🔗 <a href="{{ wayback_url }}" target="_blank">{{ wayback_url }}</a></div>{% endif %}
+                                {{ f['secrets_preview'].split('\n\n')[1][:200] if '\n\n' in f['secrets_preview'] else '' }}...
+                            </div>
+                            {% elif f['secrets_found'] and 'PDF_SENSITIVE' in f['secrets_found'] %}
+                            <div class="preview-box preview-pdf">📄 {{ f['secrets_preview'][:300] if f['secrets_preview'] else f['secrets_found'] }}{% if f['secrets_preview'] and f['secrets_preview']|length > 300 %}...{% endif %}</div>
+                            {% elif f['secrets_preview'] and ('AUTH' in f['secrets_preview'] or 'FORBIDDEN' in f['secrets_preview']) %}
+                            <div class="preview-box preview-status">{{ f['secrets_preview'][:200] }}</div>
+                            {% elif f['secrets_found'] %}
+                            <div class="preview-box preview-secret">🔑 {{ f['secrets_found'] }}</div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="empty-state"><div class="icon">🔍</div><p>No results found</p></div>
+                    {% endif %}
+                </div>
+
+                {% if total_pages > 1 %}
+                <div class="pagination">
+                    {% if page > 1 %}<a href="?page={{ page - 1 }}{% if selected_subdomain %}&subdomain={{ selected_subdomain }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}{% if severity_filter %}&severity={{ severity_filter }}{% endif %}" class="page-btn">←</a>{% endif %}
+                    {% for p in range(1, total_pages + 1) %}
+                        {% if p == page %}<span class="page-btn active">{{ p }}</span>
+                        {% elif p <= 2 or p > total_pages - 1 or (p >= page - 1 and p <= page + 1) %}<a href="?page={{ p }}{% if selected_subdomain %}&subdomain={{ selected_subdomain }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}{% if severity_filter %}&severity={{ severity_filter }}{% endif %}" class="page-btn">{{ p }}</a>
+                        {% elif p == 3 or p == total_pages - 1 %}<span class="page-btn">...</span>{% endif %}
+                    {% endfor %}
+                    {% if page < total_pages %}<a href="?page={{ page + 1 }}{% if selected_subdomain %}&subdomain={{ selected_subdomain }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}{% if severity_filter %}&severity={{ severity_filter }}{% endif %}" class="page-btn">→</a>{% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('open');
+            document.getElementById('sidebar-overlay').classList.toggle('open');
+        }
+
+        function filterSubdomain(subdomain) {
+            if (window.innerWidth <= 768) toggleSidebar();
+            const url = new URL(window.location);
+            if (subdomain) url.searchParams.set('subdomain', subdomain);
+            else url.searchParams.delete('subdomain');
+            url.searchParams.delete('page');
+            window.location = url;
+        }
+
+        document.getElementById('subdomain-filter').addEventListener('input', function(e) {
+            const filter = e.target.value.toLowerCase();
+            document.querySelectorAll('.subdomain-item[data-subdomain]').forEach(item => {
+                item.style.display = item.dataset.subdomain.toLowerCase().includes(filter) ? '' : 'none';
+            });
+        });
+
+        function searchFor(term) {
+            document.querySelector('.search-input').value = term;
+            document.querySelector('.search-box').submit();
+        }
+
+        function showToast(message, duration = 3000) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), duration);
+        }
+
+        let pdfPollInterval = null;
+
+        function startPdfAnalysis() {
+            const btn = document.getElementById('pdf-btn');
+            btn.disabled = true;
+            btn.innerHTML = '📄 Analyzing...';
+            
+            // Show progress section
+            document.getElementById('pdf-progress-section').style.display = 'block';
+            
+            fetch('/scan/{{ scan['id'] }}/pdf-analyze', { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === 'started') {
+                        showToast('📄 PDF analysis started!', 3000);
+                        // Start polling for progress
+                        pdfPollInterval = setInterval(pollPdfProgress, 2000);
+                    } else {
+                        showToast('❌ ' + data.message, 5000);
+                        btn.disabled = false;
+                        btn.innerHTML = '📄 Deep Scan PDFs';
+                        document.getElementById('pdf-progress-section').style.display = 'none';
+                    }
+                })
+                .catch(err => {
+                    showToast('❌ Error starting analysis', 3000);
+                    btn.disabled = false;
+                    btn.innerHTML = '📄 Deep Scan PDFs';
+                    document.getElementById('pdf-progress-section').style.display = 'none';
+                });
+        }
+
+        function pollPdfProgress() {
+            fetch('/scan/{{ scan['id'] }}/pdf-status')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === 'running') {
+                        const percent = data.total > 0 ? Math.round((data.analyzed / data.total) * 100) : 0;
+                        document.getElementById('pdf-progress-bar').style.width = percent + '%';
+                        document.getElementById('pdf-progress-bar').textContent = percent + '%';
+                        document.getElementById('pdf-progress-stats').textContent = `${data.analyzed} / ${data.total} (${data.secrets_found} secrets)`;
+                        document.getElementById('pdf-step-text').textContent = `Analyzing: ${data.current_url || '...'}`;
+                    } else if (data.status === 'completed') {
+                        clearInterval(pdfPollInterval);
+                        document.getElementById('pdf-progress-bar').style.width = '100%';
+                        document.getElementById('pdf-progress-bar').textContent = '100%';
+                        document.getElementById('pdf-step-text').textContent = `✅ Complete! Found ${data.secrets_found} sensitive PDFs`;
+                        showToast(`📄 PDF analysis complete! Found ${data.secrets_found} sensitive PDFs`, 5000);
+                        setTimeout(() => location.reload(), 2000);
+                    } else {
+                        // Not running, hide progress
+                        clearInterval(pdfPollInterval);
+                        document.getElementById('pdf-progress-section').style.display = 'none';
+                    }
+                })
+                .catch(() => {
+                    // Error polling, just reload
+                    clearInterval(pdfPollInterval);
+                    setTimeout(() => location.reload(), 3000);
+                });
+        }
+
+        {% if scan['status'] == 'running' %}
+        const eventSource = new EventSource('/scan/{{ scan['id'] }}/stream');
+        eventSource.onmessage = function(e) {
+            const data = JSON.parse(e.data);
+            document.getElementById('progress-bar').style.width = (data.progress || 0) + '%';
+            document.getElementById('progress-bar').textContent = (data.progress || 0) + '%';
+            document.getElementById('step-text').textContent = data.step || 'Processing...';
+            document.getElementById('progress-eta').textContent = 'ETA: ' + (data.eta || '--');
+            document.getElementById('stat-total').textContent = (data.total_urls || 0).toLocaleString();
+            document.getElementById('stat-live').textContent = (data.live || 0).toLocaleString();
+            document.getElementById('stat-critical').textContent = data.critical || 0;
+            document.getElementById('stat-high').textContent = data.high || 0;
+            document.getElementById('stat-medium').textContent = data.medium || 0;
+            document.getElementById('stat-recovered').textContent = data.recovered || 0;
+            document.getElementById('stat-secrets').textContent = data.secrets || 0;
+            document.getElementById('stat-subdomains').textContent = data.subdomains || 0;
+            
+            // Check if PDF analysis step
+            if (data.step && data.step.includes('PDF Analysis')) {
+                document.getElementById('pdf-progress-section').style.display = 'block';
+                document.getElementById('pdf-step-text').textContent = data.step;
+            }
+            
+            if (data.status === 'completed' || data.status === 'error') {
+                eventSource.close();
+                setTimeout(() => location.reload(), 1000);
+            }
+        };
+        eventSource.onerror = function() { eventSource.close(); setTimeout(() => location.reload(), 3000); };
+        {% endif %}
+    </script>
+</body>
+</html>
