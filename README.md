@@ -225,22 +225,38 @@ def run_scan(scan_id, domain):
 
 ```
 HistoryFinder/
-├── app.py              # Flask web application (routes, auth, dashboard)
-├── scanner.py          # Main scanning engine, Wayback integration
-├── tools.py            # External tools (subfinder, assetfinder, CDX API)
-├── filters.py          # URL filtering, severity calculation
-├── secrets.py          # Secret detection patterns
-├── config.py           # Configuration management
-├── database.py         # Database abstraction layer
-├── pdf_analyzer.py     # PDF deep analysis
-├── wordlist.txt        # 197K+ sensitive paths
-├── requirements.txt    # Python dependencies
-└── templates/          # Jinja2 HTML templates
-    ├── layout.html
-    ├── login.html
-    ├── dashboard.html
-    └── scan.html
+├── cli/                    # Command-line interface
+│   ├── cli.py              # Main CLI entry point
+│   └── __init__.py
+├── web/                    # Flask web application
+│   ├── app.py              # Web app routes, auth, dashboard
+│   └── templates/          # Jinja2 HTML templates
+│       ├── layout.html
+│       ├── login.html
+│       ├── dashboard.html
+│       └── scan.html
+├── core/                   # Shared business logic
+│   ├── __init__.py         # Package exports
+│   ├── scanner.py          # Scanning engine, Wayback integration
+│   ├── tools.py            # External tools (subfinder, assetfinder, CDX API)
+│   ├── filters.py          # URL filtering, severity calculation
+│   ├── secrets.py          # Secret detection patterns
+│   ├── config.py           # Configuration management
+│   └── database.py         # Database abstraction layer
+├── utils/                  # Helper modules
+│   └── pdf_analyzer.py     # PDF deep analysis
+├── data/                   # Static data files
+│   └── wordlist.txt        # 197K+ sensitive paths
+├── requirements.txt        # Python dependencies
+├── .gitignore              # Git exclusions
+└── README.md               # This file
 ```
+
+**Why this structure?**
+- **Separation of Concerns**: CLI and web app are completely separate
+- **Shared Core**: Business logic in `core/` is reusable by both interfaces
+- **Scalability**: Easy to add new interfaces (API, desktop app, etc.)
+- **Clear Boundaries**: Each directory has a single purpose
 
 ---
 
@@ -273,6 +289,8 @@ export SECRET_KEY=your-secret-key-here
 
 ## Deployment
 
+### Web Application
+
 ```bash
 # Copy to server
 scp -r HistoryFinder/* root@server:/opt/temportal-recon-web/
@@ -290,7 +308,7 @@ After=network.target
 User=root
 WorkingDirectory=/opt/temportal-recon-web
 Environment="PATH=/root/go/bin:/usr/local/bin:/usr/bin:/bin"
-ExecStart=/usr/bin/python3 app.py
+ExecStart=/usr/bin/python3 web/app.py
 Restart=always
 
 [Install]
@@ -302,6 +320,22 @@ systemctl daemon-reload
 systemctl restart temporal-recon.service
 systemctl enable temporal-recon.service
 systemctl status temporal-recon.service
+```
+
+### CLI Usage
+
+```bash
+# Run full scan
+python cli/cli.py scan example.com
+
+# Subdomain discovery only
+python cli/cli.py subdomains example.com
+
+# Fetch Wayback URLs only
+python cli/cli.py urls example.com
+
+# Save results to file
+python cli/cli.py scan example.com -o results.txt
 ```
 
 ---
