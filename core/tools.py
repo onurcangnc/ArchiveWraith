@@ -368,14 +368,105 @@ def fetch_cdx_parallel(domains, max_workers=20, callback=None):
     return list(urls)
 
 
-def run_wayback_cdx(input_file, output_dir, callback=None):
+def run_gau(input_file, output_dir, callback=None, timeout=3600):
     """
-    Fetch Wayback URLs using CDX API with WILDCARD query.
+    Run gau (GetAllUrls) on all subdomains.
 
-    Strategy:
-    1. Use wildcard query *.domain.com/* for MAXIMUM coverage
-    2. Single request captures ALL subdomains' URLs at once
-    3. Much faster than domain-by-domain approach
+    GAU fetches URLs from multiple sources:
+    - Wayback Machine
+    - CommonCrawl
+    - OTX (AlienVault)
+    - URLScan
+
+    Usage: cat subdomains.txt | gau > urls.txt
+
+    Returns: (output_file, url_count, subdomain_count)
+    """
+    from urllib.parse import urlparse
+
+    if not input_file or not os.path.exists(input_file):
+        print("[!] No input file for GAU")
+        return None, 0, 0
+
+    gau_path = find_tool('gau', ['/usr/local/bin/gau', '/root/go/bin/gau'])
+    if not gau_path:
+        print("[!] gau not installed - falling back to CDX API")
+        return run_wayback_cdx_fallback(input_file, output_dir, callback)
+
+    with open(input_file) as f:
+        domains = [l.strip() for l in f if l.strip()]
+
+    if not domains:
+        print("[!] No domains to process")
+        return None, 0, 0
+
+    total_domains = len(domains)
+    print(f"\n[GAU] Processing {total_domains:,} subdomains...")
+    print(f"[GAU] Sources: Wayback + CommonCrawl + OTX + URLScan")
+    if callback:
+        callback(f'[2/3] GAU: Processing {total_domains:,} subdomains...')
+
+    # Run gau with stdin input (cat domains | gau)
+    try:
+        domains_input = '\n'.join(domains)
+
+        result = subprocess.run(
+            [gau_path, '--threads', '5', '--timeout', '30'],
+            input=domains_input,
+            capture_output=True,
+            text=True,
+            timeout=timeout
+        )
+
+        # Parse output
+        urls = set()
+        subdomains = set()
+
+        for line in result.stdout.strip().split('\n'):
+            line = line.strip()
+            if line and line.startswith('http'):
+                urls.add(line)
+                try:
+                    parsed = urlparse(line)
+                    if parsed.netloc:
+                        subdomains.add(parsed.netloc.lower())
+                except:
+                    pass
+
+        # Log any errors
+        if result.stderr:
+            stderr_lines = result.stderr.strip().split('\n')[:5]
+            for err in stderr_lines:
+                if err.strip():
+                    print(f"  [gau] {err.strip()}")
+
+    except subprocess.TimeoutExpired:
+        print(f"[!] GAU timeout after {timeout}s")
+        return None, 0, 0
+    except Exception as e:
+        print(f"[!] GAU error: {e}")
+        return None, 0, 0
+
+    if not urls:
+        print("[!] No URLs found from GAU")
+        return None, 0, 0
+
+    # Save to file
+    output = os.path.join(output_dir, 'urls.txt')
+    with open(output, 'w') as f:
+        f.write('\n'.join(sorted(urls)))
+
+    print(f"[✓] GAU: {len(urls):,} URLs from {len(subdomains):,} subdomains")
+    if callback:
+        callback(f'[2/3] ✓ GAU: {len(urls):,} URLs from {len(subdomains):,} subdomains')
+
+    return output, len(urls), len(subdomains)
+
+
+def run_wayback_cdx_fallback(input_file, output_dir, callback=None):
+    """
+    Fallback to CDX API if gau is not available.
+    Uses wildcard query for efficiency.
 
     Returns: (output_file, url_count, subdomain_count)
     """
@@ -407,10 +498,10 @@ def run_wayback_cdx(input_file, output_dir, callback=None):
     else:
         root_domain = first_domain
 
-    print(f"\n[WAYBACK CDX] Root domain: {root_domain}")
-    print(f"[WAYBACK CDX] Discovered subdomains: {len(domains):,}")
+    print(f"\n[WAYBACK CDX FALLBACK] Root domain: {root_domain}")
+    print(f"[WAYBACK CDX FALLBACK] Discovered subdomains: {len(domains):,}")
     if callback:
-        callback(f'[2/3] Wayback CDX: Starting wildcard query for {root_domain}')
+        callback(f'[2/3] CDX Fallback: Wildcard query for {root_domain}')
 
     # Use wildcard query for ALL subdomains at once
     urls, subdomain_count = fetch_cdx_wildcard(root_domain, callback=callback)
@@ -436,6 +527,16 @@ def run_wayback_cdx(input_file, output_dir, callback=None):
         callback(f'[2/3] ✓ Wayback CDX: {len(urls):,} URLs from {subdomain_count:,} subdomains')
 
     return output, len(urls), subdomain_count
+
+
+def run_wayback_cdx(input_file, output_dir, callback=None):
+    """
+    Main URL fetching function - uses GAU with CDX fallback.
+
+    Returns: (output_file, url_count, subdomain_count)
+    """
+    # Try GAU first (faster, more sources)
+    return run_gau(input_file, output_dir, callback)
 
 
 # ============================================================================
