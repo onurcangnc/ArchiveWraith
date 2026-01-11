@@ -217,6 +217,98 @@ def fetch_cdx_domain(domain, timeout=30, delay=1.0, max_retries=3):
     return urls
 
 
+def fetch_cdx_wildcard(root_domain, callback=None, timeout=120, max_retries=3):
+    """
+    Fetch ALL Wayback URLs for a domain using wildcard CDX query.
+    Single request to get all subdomains' URLs at once.
+
+    Uses: *.example.com/* to capture everything.
+
+    Returns: (urls_set, unique_subdomains_count)
+    """
+    from urllib.parse import urlparse
+
+    urls = set()
+    subdomains = set()
+
+    # Wildcard query for ALL subdomains
+    cdx_url = (
+        f"https://web.archive.org/cdx/search/cdx"
+        f"?url=*.{root_domain}/*"
+        f"&matchType=domain"
+        f"&collapse=urlkey"
+        f"&output=text"
+        f"&fl=original"
+        f"&limit=500000"
+    )
+
+    print(f"\n[CDX WILDCARD] Fetching *.{root_domain}/* ...")
+    if callback:
+        callback(f'[2/3] CDX Wildcard: Fetching all URLs for *.{root_domain}/*')
+
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(cdx_url, timeout=timeout)
+
+            if response.status_code == 200:
+                lines = response.text.strip().split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if line:
+                        urls.add(line)
+                        # Extract subdomain from URL
+                        try:
+                            parsed = urlparse(line)
+                            if parsed.netloc:
+                                subdomains.add(parsed.netloc.lower())
+                        except:
+                            pass
+
+                print(f"[✓] CDX Wildcard: {len(urls):,} URLs from {len(subdomains):,} subdomains")
+                if callback:
+                    callback(f'[2/3] ✓ CDX Wildcard: {len(urls):,} URLs from {len(subdomains):,} subdomains')
+                break
+
+            elif response.status_code == 429:
+                wait_time = (attempt + 1) * 10  # 10, 20, 30 seconds
+                print(f"  [!] Rate limited (429) - waiting {wait_time}s (attempt {attempt+1}/{max_retries})")
+                if callback:
+                    callback(f'[2/3] Rate limited, waiting {wait_time}s...')
+                time.sleep(wait_time)
+                if attempt < max_retries - 1:
+                    continue
+
+            elif response.status_code == 503:
+                wait_time = (attempt + 1) * 5
+                print(f"  [!] Service unavailable (503) - waiting {wait_time}s")
+                time.sleep(wait_time)
+                if attempt < max_retries - 1:
+                    continue
+            else:
+                print(f"  [!] CDX returned status {response.status_code}")
+                break
+
+        except requests.exceptions.Timeout:
+            print(f"  [!] Timeout (attempt {attempt+1}/{max_retries})")
+            if attempt < max_retries - 1:
+                time.sleep(5)
+                continue
+            break
+        except Exception as e:
+            print(f"  [!] CDX error: {e}")
+            break
+
+    # Also fetch root domain itself (without wildcard)
+    print(f"[CDX] Also fetching root domain: {root_domain}")
+    root_urls = fetch_cdx_domain(root_domain, timeout=30, delay=1.0)
+    urls.update(root_urls)
+    if root_urls:
+        subdomains.add(root_domain)
+        print(f"  [+] Root domain: {len(root_urls):,} URLs")
+
+    return urls, len(subdomains)
+
+
 def fetch_cdx_parallel(domains, max_workers=20, callback=None):
     """
     Fetch Wayback URLs for multiple domains in parallel using CDX API.
@@ -278,58 +370,72 @@ def fetch_cdx_parallel(domains, max_workers=20, callback=None):
 
 def run_wayback_cdx(input_file, output_dir, callback=None):
     """
-    Fetch Wayback URLs using CDX API instead of GAU.
+    Fetch Wayback URLs using CDX API with WILDCARD query.
 
-    Hybrid strategy:
-    1. Try wildcard request first (single request, fast)
-    2. If low results, fall back to parallel domain-by-domain
+    Strategy:
+    1. Use wildcard query *.domain.com/* for MAXIMUM coverage
+    2. Single request captures ALL subdomains' URLs at once
+    3. Much faster than domain-by-domain approach
 
-    This gives MAXIMUM Wayback coverage!
+    Returns: (output_file, url_count, subdomain_count)
     """
     if not input_file or not os.path.exists(input_file):
         print("[!] No input file for Wayback CDX")
-        return None, 0
+        return None, 0, 0
 
     with open(input_file) as f:
         domains = [l.strip() for l in f if l.strip()]
 
-    total = len(domains)
-    if total == 0:
+    if not domains:
         print("[!] No domains to process")
-        return None, 0
+        return None, 0, 0
 
-    # Adaptive workers based on domain count
-    # NOTE: CDX API has 1 req/sec rate limit!
-    # For large scans, use fewer workers to avoid 429 errors
-    if total > 10000:
-        max_workers = 2  # Very conservative for large scans (14K domains)
-    elif total > 5000:
-        max_workers = 3
-    elif total > 1000:
-        max_workers = 3
+    # Extract root domain from first subdomain
+    first_domain = domains[0].lower()
+    parts = first_domain.split('.')
+
+    # Handle SLD TLDs (co.uk, com.tr, etc.)
+    sld_tlds = {'co.uk', 'org.uk', 'ac.uk', 'com.tr', 'org.tr', 'edu.tr',
+                'com.br', 'org.br', 'com.au', 'co.jp', 'or.jp', 'ac.jp'}
+
+    if len(parts) >= 3:
+        last_two = f"{parts[-2]}.{parts[-1]}"
+        if last_two in sld_tlds:
+            root_domain = '.'.join(parts[-3:])
+        else:
+            root_domain = '.'.join(parts[-2:])
     else:
-        max_workers = 3  # Small scans can be slightly faster
+        root_domain = first_domain
 
-    print(f"\n[WAYBACK CDX] Processing {total:,} domains (workers: {max_workers})...")
+    print(f"\n[WAYBACK CDX] Root domain: {root_domain}")
+    print(f"[WAYBACK CDX] Discovered subdomains: {len(domains):,}")
     if callback:
-        callback(f'[2/3] Wayback CDX: Fetching URLs...')
+        callback(f'[2/3] Wayback CDX: Starting wildcard query for {root_domain}')
 
-    urls = fetch_cdx_parallel(domains, max_workers=max_workers, callback=callback)
+    # Use wildcard query for ALL subdomains at once
+    urls, subdomain_count = fetch_cdx_wildcard(root_domain, callback=callback)
+
+    if not urls:
+        print("[!] No URLs found from Wayback CDX wildcard")
+        # Fallback to parallel if wildcard fails
+        print("[!] Falling back to parallel domain-by-domain...")
+        urls = fetch_cdx_parallel(domains, max_workers=3, callback=callback)
+        subdomain_count = len(domains)
 
     if not urls:
         print("[!] No URLs found from Wayback CDX")
-        return None, 0
+        return None, 0, 0
 
     # Save to file
     output = os.path.join(output_dir, 'urls.txt')
     with open(output, 'w') as f:
         f.write('\n'.join(sorted(urls)))
 
-    print(f"[✓] Wayback CDX: {len(urls):,} URLs")
+    print(f"[✓] Wayback CDX: {len(urls):,} URLs from {subdomain_count:,} subdomains")
     if callback:
-        callback(f'[2/3] ✓ Wayback CDX: {len(urls):,} URLs')
+        callback(f'[2/3] ✓ Wayback CDX: {len(urls):,} URLs from {subdomain_count:,} subdomains')
 
-    return output, len(urls)
+    return output, len(urls), subdomain_count
 
 
 # ============================================================================

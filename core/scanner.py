@@ -67,13 +67,19 @@ def run_recon_pipeline(domain, callback=None):
                 f.write(f'\n{domain}')
             subs_count += 1
 
-        # 2/3: Wayback CDX API → ALL subdomains (MAXIMUM COVERAGE!)
+        # 2/3: Wayback CDX API → ALL subdomains via WILDCARD (MAXIMUM COVERAGE!)
         if callback:
             callback('[2/3] Wayback CDX: Fetching URLs from Wayback...')
 
-        urls_file, urls_count = run_wayback_cdx(
+        urls_file, urls_count, wayback_subs = run_wayback_cdx(
             subs_file, output_dir, callback=callback
         )
+
+        # Use the higher subdomain count (discovered vs wayback)
+        # Wayback might find more subdomains than subfinder/assetfinder
+        if wayback_subs > subs_count:
+            print(f"[+] Wayback found more subdomains: {wayback_subs:,} vs discovered {subs_count:,}")
+            subs_count = wayback_subs
 
         if urls_count == 0:
             return [], subs_count, "No URLs found from Wayback Machine"
@@ -114,7 +120,7 @@ def fetch_cdx(domain, callback=None, timeout=300):
             callback(f'[1/2] Wayback CDX: Fetching URLs...')
 
         try:
-            from tools import fetch_cdx_domain
+            from .tools import fetch_cdx_domain
             urls = fetch_cdx_domain(domain, timeout=timeout)
 
             print(f"[✓] Wayback CDX: {len(urls):,} URLs")
