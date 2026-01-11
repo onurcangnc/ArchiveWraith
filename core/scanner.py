@@ -243,6 +243,24 @@ def run_scan(scan_id, domain):
         start_time = time.time()
         lock = threading.Lock()
 
+        # Step 1: Domain-based live check (1 request per domain instead of per URL)
+        domain_status = {}  # Cache domain status: {domain: status_code}
+
+        def check_domain_status(subdomain):
+            """Check if domain is live (cached)"""
+            if subdomain in domain_status:
+                return domain_status[subdomain]
+
+            try:
+                resp = requests.head(f"https://{subdomain}/", timeout=5,
+                                    allow_redirects=True,
+                                    headers={'User-Agent': 'Mozilla/5.0'}, verify=False)
+                domain_status[subdomain] = resp.status_code
+            except:
+                domain_status[subdomain] = None  # Unreachable
+
+            return domain_status[subdomain]
+
         def check_url(url):
             nonlocal checked
 
@@ -263,64 +281,78 @@ def run_scan(scan_id, domain):
                     checked += 1
                 return None
 
-            # Step 1: Live check to get status code
-            live_status = None
-            try:
-                live_response = requests.head(url, timeout=5, allow_redirects=True,
-                                             headers={'User-Agent': 'Mozilla/5.0'}, verify=False)
-                live_status = live_response.status_code
-            except:
-                pass  # Connection failed, treat as unavailable
+            # Get domain status (cached)
+            domain_live_status = check_domain_status(subdomain)
 
             result = {
                 'url': url,
                 'subdomain': subdomain,
                 'extension': ext or '',
-                'status': live_status,
+                'status': domain_live_status,
                 'secrets': [],
                 'recovered': False,
                 'preview': '',
                 'wayback_url': ''
             }
 
-            # Step 2: Golden Method - 404/400 URLs go to Wayback for deleted content
-            if live_status in (404, 400, 403, 410, None):
-                # Golden Method: Check Wayback for deleted/unavailable files
-                wb_result = check_wayback_url(url)
+            # ALWAYS check Wayback first
+            wb_result = check_wayback_url(url)
+            result['wayback_url'] = wb_result['wayback_url'] or ''
+
+            # Domain DEAD (404/400/403/None) → Only Wayback (Golden Method)
+            if domain_live_status is None or domain_live_status >= 400:
                 result['secrets'] = wb_result['secrets']
                 result['recovered'] = wb_result['has_snapshot']
-                result['wayback_url'] = wb_result['wayback_url'] or ''
 
                 if wb_result['has_snapshot']:
                     if wb_result['content']:
                         if wb_result['secrets']:
                             secret_names = ', '.join(wb_result['secrets'])
-                            result['preview'] = f"🏆 GOLDEN METHOD: Deleted file recovered!\n📦 Status: {live_status or 'N/A'} → Wayback Found\n🔑 Secrets: {secret_names}\n\n{wb_result['content'][:400]}"
+                            result['preview'] = f"🏆 GOLDEN METHOD: Deleted file recovered!\n📦 Domain Status: {domain_live_status or 'Unreachable'}\n🔑 Secrets: {secret_names}\n\n{wb_result['content'][:400]}"
                         else:
-                            result['preview'] = f"🏆 GOLDEN METHOD: Deleted file recovered!\n📦 Status: {live_status or 'N/A'} → Wayback Found\n🔗 {wb_result['wayback_url']}\n\n{wb_result['content'][:400]}"
+                            result['preview'] = f"🏆 GOLDEN METHOD: Deleted file recovered!\n📦 Domain Status: {domain_live_status or 'Unreachable'}\n🔗 {wb_result['wayback_url']}\n\n{wb_result['content'][:400]}"
                     else:
-                        result['preview'] = f"🏆 GOLDEN METHOD: Deleted file found!\n📦 Status: {live_status or 'N/A'}\n🔗 {wb_result['wayback_url']}\n(Content download pending)"
+                        result['preview'] = f"🏆 GOLDEN METHOD: Deleted file found!\n📦 Domain Status: {domain_live_status or 'Unreachable'}\n🔗 {wb_result['wayback_url']}"
                 else:
-                    result['preview'] = f"❌ Status: {live_status or 'N/A'} - No Wayback snapshot"
+                    result['preview'] = f"❌ Domain: {domain_live_status or 'Unreachable'} - No Wayback snapshot"
 
-            # Step 3: Live URLs (200, 301, 302, etc.) - check content directly
-            elif live_status and live_status < 400:
+            # Domain LIVE (200-399) → Check live content + Wayback
+            else:
                 try:
                     live_content = requests.get(url, timeout=10,
                                                headers={'User-Agent': 'Mozilla/5.0'}, verify=False)
                     if live_content.ok:
                         content = live_content.text[:50000]
-                        result['secrets'] = check_secrets(content)
-                        if result['secrets']:
-                            secret_names = ', '.join(result['secrets'])
-                            result['preview'] = f"🟢 LIVE: Status {live_status}\n🔑 Secrets: {secret_names}\n\n{content[:400]}"
-                        else:
-                            result['preview'] = f"🟢 LIVE: Status {live_status}\n\n{content[:300]}"
-                except:
-                    result['preview'] = f"🟢 Status: {live_status} (content fetch failed)"
+                        live_secrets = check_secrets(content)
 
-            else:
-                result['preview'] = f"⚠️ Status: {live_status}"
+                        # Combine secrets from both live and wayback
+                        all_secrets = list(set(live_secrets + wb_result['secrets']))
+                        result['secrets'] = all_secrets
+                        result['recovered'] = wb_result['has_snapshot']
+
+                        if all_secrets:
+                            secret_names = ', '.join(all_secrets)
+                            wayback_note = f"\n📦 Wayback: {wb_result['wayback_url']}" if wb_result['has_snapshot'] else ""
+                            result['preview'] = f"🟢 LIVE: Status {live_content.status_code}\n🔑 Secrets: {secret_names}{wayback_note}\n\n{content[:400]}"
+                        else:
+                            wayback_note = f"\n📦 Wayback: Available" if wb_result['has_snapshot'] else ""
+                            result['preview'] = f"🟢 LIVE: Status {live_content.status_code}{wayback_note}\n\n{content[:300]}"
+                    else:
+                        # Live returned error, use wayback
+                        result['secrets'] = wb_result['secrets']
+                        result['recovered'] = wb_result['has_snapshot']
+                        if wb_result['has_snapshot']:
+                            result['preview'] = f"⚠️ Live: {live_content.status_code}\n📦 Wayback: {wb_result['wayback_url']}"
+                        else:
+                            result['preview'] = f"⚠️ Live: {live_content.status_code} - No Wayback"
+                except:
+                    # Live fetch failed, use wayback
+                    result['secrets'] = wb_result['secrets']
+                    result['recovered'] = wb_result['has_snapshot']
+                    if wb_result['has_snapshot']:
+                        result['preview'] = f"⚠️ Live fetch failed\n📦 Wayback: {wb_result['wayback_url']}"
+                    else:
+                        result['preview'] = f"⚠️ Live fetch failed - No Wayback"
 
             # Progress update
             with lock:
