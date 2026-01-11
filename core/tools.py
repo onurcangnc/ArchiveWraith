@@ -368,9 +368,9 @@ def fetch_cdx_parallel(domains, max_workers=20, callback=None):
     return list(urls)
 
 
-def run_gau(input_file, output_dir, callback=None, timeout=3600):
+def run_gau(input_file, output_dir, callback=None, timeout_per_domain=60):
     """
-    Run gau (GetAllUrls) on all subdomains.
+    Run gau (GetAllUrls) for each subdomain individually to prevent stuck.
 
     GAU fetches URLs from multiple sources:
     - Wayback Machine
@@ -378,7 +378,7 @@ def run_gau(input_file, output_dir, callback=None, timeout=3600):
     - OTX (AlienVault)
     - URLScan
 
-    Usage: cat subdomains.txt | gau > urls.txt
+    Per-domain mode: each domain is processed separately with timeout.
 
     Returns: (output_file, url_count, subdomain_count)
     """
@@ -400,52 +400,60 @@ def run_gau(input_file, output_dir, callback=None, timeout=3600):
         print("[!] No domains to process")
         return None, 0, 0
 
-    total_domains = len(domains)
-    print(f"\n[GAU] Processing {total_domains:,} subdomains...")
+    total = len(domains)
+    urls = set()
+    subdomains = set()
+    failed = 0
+    start_time = time.time()
+
+    print(f"\n[GAU] Processing {total:,} domains (per-domain mode)")
     print(f"[GAU] Sources: Wayback + CommonCrawl + OTX + URLScan")
+    print(f"[GAU] Timeout per domain: {timeout_per_domain}s")
     if callback:
-        callback(f'[2/3] GAU: Processing {total_domains:,} subdomains...')
+        callback(f'[2/3] GAU: Processing {total:,} domains...')
 
-    # Run gau with stdin input (cat domains | gau)
-    try:
-        domains_input = '\n'.join(domains)
+    for i, domain in enumerate(domains, 1):
+        # Progress update every 10 domains or at milestones
+        if i % 10 == 0 or i == 1:
+            elapsed = time.time() - start_time
+            rate = i / elapsed if elapsed > 0 else 0
+            eta = (total - i) / rate if rate > 0 else 0
+            eta_str = f"{int(eta//60)}m{int(eta%60)}s" if eta > 60 else f"{int(eta)}s"
+            print(f"  [GAU] {i:,}/{total:,} | {len(urls):,} URLs | ETA: {eta_str}")
+            if callback:
+                callback(f'[2/3] GAU: {i}/{total} | {len(urls):,} URLs | ETA: {eta_str}')
 
-        result = subprocess.run(
-            [gau_path, '--threads', '5', '--timeout', '30'],
-            input=domains_input,
-            capture_output=True,
-            text=True,
-            timeout=timeout
-        )
+        try:
+            result = subprocess.run(
+                [gau_path, '--timeout', '30', domain],
+                capture_output=True,
+                text=True,
+                timeout=timeout_per_domain
+            )
 
-        # Parse output
-        urls = set()
-        subdomains = set()
+            domain_urls = 0
+            for line in result.stdout.strip().split('\n'):
+                line = line.strip()
+                if line and line.startswith('http'):
+                    urls.add(line)
+                    domain_urls += 1
+                    try:
+                        parsed = urlparse(line)
+                        if parsed.netloc:
+                            subdomains.add(parsed.netloc.lower())
+                    except:
+                        pass
 
-        for line in result.stdout.strip().split('\n'):
-            line = line.strip()
-            if line and line.startswith('http'):
-                urls.add(line)
-                try:
-                    parsed = urlparse(line)
-                    if parsed.netloc:
-                        subdomains.add(parsed.netloc.lower())
-                except:
-                    pass
+            if domain_urls > 0:
+                print(f"  [+] {domain}: {domain_urls:,} URLs")
 
-        # Log any errors
-        if result.stderr:
-            stderr_lines = result.stderr.strip().split('\n')[:5]
-            for err in stderr_lines:
-                if err.strip():
-                    print(f"  [gau] {err.strip()}")
-
-    except subprocess.TimeoutExpired:
-        print(f"[!] GAU timeout after {timeout}s")
-        return None, 0, 0
-    except Exception as e:
-        print(f"[!] GAU error: {e}")
-        return None, 0, 0
+        except subprocess.TimeoutExpired:
+            print(f"  [!] Timeout: {domain}")
+            failed += 1
+            continue
+        except Exception as e:
+            failed += 1
+            continue
 
     if not urls:
         print("[!] No URLs found from GAU")
@@ -456,7 +464,10 @@ def run_gau(input_file, output_dir, callback=None, timeout=3600):
     with open(output, 'w') as f:
         f.write('\n'.join(sorted(urls)))
 
-    print(f"[✓] GAU: {len(urls):,} URLs from {len(subdomains):,} subdomains")
+    elapsed = time.time() - start_time
+    print(f"\n[✓] GAU Complete in {int(elapsed//60)}m{int(elapsed%60)}s")
+    print(f"    Total: {len(urls):,} URLs from {len(subdomains):,} subdomains")
+    print(f"    Processed: {total - failed}/{total} domains")
     if callback:
         callback(f'[2/3] ✓ GAU: {len(urls):,} URLs from {len(subdomains):,} subdomains')
 
