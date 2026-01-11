@@ -1,13 +1,13 @@
 """
-ArchiveWraith - Wayback-Only Scan Worker
-=========================================
-NO Live Check - Wayback Machine Only!
-1. Subdomain Discovery
-2. Wayback CDX API (Direct Wayback URLs - MAXIMUM COVERAGE!)
+ArchiveWraith - Hybrid Scan Worker
+==================================
+Golden Method + Live Check:
+1. Subdomain Discovery (subfinder + assetfinder)
+2. Wayback URLs (waybackurls)
 3. Filter (sensitive extensions)
-4. Wayback Archive Check:
-   - Snapshot exists → Download + Secret Scan
-   - No snapshot → Mark for manual review
+4. Hybrid Check:
+   - 404/400/403/410 → GOLDEN METHOD (Wayback for deleted files)
+   - 200/301/302 → Live content + Secret scan
 """
 import os
 import re
@@ -263,32 +263,64 @@ def run_scan(scan_id, domain):
                     checked += 1
                 return None
 
-            # Check Wayback
-            wb_result = check_wayback_url(url)
+            # Step 1: Live check to get status code
+            live_status = None
+            try:
+                live_response = requests.head(url, timeout=5, allow_redirects=True,
+                                             headers={'User-Agent': 'Mozilla/5.0'}, verify=False)
+                live_status = live_response.status_code
+            except:
+                pass  # Connection failed, treat as unavailable
 
             result = {
                 'url': url,
                 'subdomain': subdomain,
                 'extension': ext or '',
-                'status': None,  # No live status (we don't check live!)
-                'secrets': wb_result['secrets'],
-                'recovered': wb_result['has_snapshot'],
+                'status': live_status,
+                'secrets': [],
+                'recovered': False,
                 'preview': '',
-                'wayback_url': wb_result['wayback_url'] or ''
+                'wayback_url': ''
             }
 
-            # Build preview
-            if wb_result['has_snapshot']:
-                if wb_result['content']:
-                    if wb_result['secrets']:
-                        secret_names = ', '.join(wb_result['secrets'])
-                        result['preview'] = f"📦 Wayback Snapshot Found\n🔑 Secrets: {secret_names}\n\n{wb_result['content'][:400]}"
+            # Step 2: Golden Method - 404/400 URLs go to Wayback for deleted content
+            if live_status in (404, 400, 403, 410, None):
+                # Golden Method: Check Wayback for deleted/unavailable files
+                wb_result = check_wayback_url(url)
+                result['secrets'] = wb_result['secrets']
+                result['recovered'] = wb_result['has_snapshot']
+                result['wayback_url'] = wb_result['wayback_url'] or ''
+
+                if wb_result['has_snapshot']:
+                    if wb_result['content']:
+                        if wb_result['secrets']:
+                            secret_names = ', '.join(wb_result['secrets'])
+                            result['preview'] = f"🏆 GOLDEN METHOD: Deleted file recovered!\n📦 Status: {live_status or 'N/A'} → Wayback Found\n🔑 Secrets: {secret_names}\n\n{wb_result['content'][:400]}"
+                        else:
+                            result['preview'] = f"🏆 GOLDEN METHOD: Deleted file recovered!\n📦 Status: {live_status or 'N/A'} → Wayback Found\n🔗 {wb_result['wayback_url']}\n\n{wb_result['content'][:400]}"
                     else:
-                        result['preview'] = f"📦 Wayback Snapshot Found\n🔗 {wb_result['wayback_url']}\n\n{wb_result['content'][:400]}"
+                        result['preview'] = f"🏆 GOLDEN METHOD: Deleted file found!\n📦 Status: {live_status or 'N/A'}\n🔗 {wb_result['wayback_url']}\n(Content download pending)"
                 else:
-                    result['preview'] = f"📦 Wayback Snapshot Exists\n🔗 {wb_result['wayback_url']}\n(Content download failed)"
+                    result['preview'] = f"❌ Status: {live_status or 'N/A'} - No Wayback snapshot"
+
+            # Step 3: Live URLs (200, 301, 302, etc.) - check content directly
+            elif live_status and live_status < 400:
+                try:
+                    live_content = requests.get(url, timeout=10,
+                                               headers={'User-Agent': 'Mozilla/5.0'}, verify=False)
+                    if live_content.ok:
+                        content = live_content.text[:50000]
+                        result['secrets'] = check_secrets(content)
+                        if result['secrets']:
+                            secret_names = ', '.join(result['secrets'])
+                            result['preview'] = f"🟢 LIVE: Status {live_status}\n🔑 Secrets: {secret_names}\n\n{content[:400]}"
+                        else:
+                            result['preview'] = f"🟢 LIVE: Status {live_status}\n\n{content[:300]}"
+                except:
+                    result['preview'] = f"🟢 Status: {live_status} (content fetch failed)"
+
             else:
-                result['preview'] = "🔍 No Wayback Snapshot - Manual Check Required"
+                result['preview'] = f"⚠️ Status: {live_status}"
 
             # Progress update
             with lock:
@@ -297,9 +329,8 @@ def run_scan(scan_id, domain):
                     elapsed = time.time() - start_time
                     rate = int(checked / elapsed) if elapsed > 0 else 0
                     update_scan(scan_id, checked_urls=checked, urls_per_sec=rate,
-                               step=f'Wayback: {checked:,}/{total:,}')
+                               step=f'Checking: {checked:,}/{total:,}')
 
-            # Return ALL URLs (never filter out)
             return result
 
         # Process URLs with thread pool
