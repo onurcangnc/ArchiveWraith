@@ -368,15 +368,12 @@ def fetch_cdx_parallel(domains, max_workers=20, callback=None):
     return list(urls)
 
 
-def run_gau(input_file, output_dir, callback=None, timeout_per_domain=60):
+def run_waybackurls(input_file, output_dir, callback=None, timeout_per_domain=30):
     """
-    Run gau (GetAllUrls) for each subdomain individually to prevent stuck.
+    Run waybackurls for each subdomain individually.
 
-    GAU fetches URLs from multiple sources:
-    - Wayback Machine
-    - CommonCrawl
-    - OTX (AlienVault)
-    - URLScan
+    waybackurls fetches URLs from Wayback Machine only.
+    Simpler and more stable than GAU.
 
     Per-domain mode: each domain is processed separately with timeout.
 
@@ -385,12 +382,12 @@ def run_gau(input_file, output_dir, callback=None, timeout_per_domain=60):
     from urllib.parse import urlparse
 
     if not input_file or not os.path.exists(input_file):
-        print("[!] No input file for GAU")
+        print("[!] No input file for waybackurls")
         return None, 0, 0
 
-    gau_path = find_tool('gau', ['/usr/local/bin/gau', '/root/go/bin/gau'])
-    if not gau_path:
-        print("[!] gau not installed - falling back to CDX API")
+    wb_path = find_tool('waybackurls', ['/usr/local/bin/waybackurls', '/root/go/bin/waybackurls'])
+    if not wb_path:
+        print("[!] waybackurls not installed - falling back to CDX API")
         return run_wayback_cdx_fallback(input_file, output_dir, callback)
 
     with open(input_file) as f:
@@ -406,11 +403,11 @@ def run_gau(input_file, output_dir, callback=None, timeout_per_domain=60):
     failed = 0
     start_time = time.time()
 
-    print(f"\n[GAU] Processing {total:,} domains (per-domain mode)")
-    print(f"[GAU] Sources: Wayback + CommonCrawl + OTX + URLScan")
-    print(f"[GAU] Timeout per domain: {timeout_per_domain}s")
+    print(f"\n[WAYBACKURLS] Processing {total:,} domains (per-domain mode)")
+    print(f"[WAYBACKURLS] Source: Wayback Machine")
+    print(f"[WAYBACKURLS] Timeout per domain: {timeout_per_domain}s")
     if callback:
-        callback(f'[2/3] GAU: Processing {total:,} domains...')
+        callback(f'[2/3] Waybackurls: Processing {total:,} domains...')
 
     for i, domain in enumerate(domains, 1):
         # Progress update every 10 domains or at milestones
@@ -419,13 +416,15 @@ def run_gau(input_file, output_dir, callback=None, timeout_per_domain=60):
             rate = i / elapsed if elapsed > 0 else 0
             eta = (total - i) / rate if rate > 0 else 0
             eta_str = f"{int(eta//60)}m{int(eta%60)}s" if eta > 60 else f"{int(eta)}s"
-            print(f"  [GAU] {i:,}/{total:,} | {len(urls):,} URLs | ETA: {eta_str}")
+            print(f"  [WB] {i:,}/{total:,} | {len(urls):,} URLs | ETA: {eta_str}")
             if callback:
-                callback(f'[2/3] GAU: {i}/{total} | {len(urls):,} URLs | ETA: {eta_str}')
+                callback(f'[2/3] Waybackurls: {i}/{total} | {len(urls):,} URLs | ETA: {eta_str}')
 
         try:
+            # waybackurls takes domain as stdin: echo domain | waybackurls
             result = subprocess.run(
-                [gau_path, '--timeout', '30', domain],
+                [wb_path],
+                input=domain,
                 capture_output=True,
                 text=True,
                 timeout=timeout_per_domain
@@ -456,7 +455,7 @@ def run_gau(input_file, output_dir, callback=None, timeout_per_domain=60):
             continue
 
     if not urls:
-        print("[!] No URLs found from GAU")
+        print("[!] No URLs found from waybackurls")
         return None, 0, 0
 
     # Save to file
@@ -465,11 +464,11 @@ def run_gau(input_file, output_dir, callback=None, timeout_per_domain=60):
         f.write('\n'.join(sorted(urls)))
 
     elapsed = time.time() - start_time
-    print(f"\n[✓] GAU Complete in {int(elapsed//60)}m{int(elapsed%60)}s")
+    print(f"\n[✓] Waybackurls Complete in {int(elapsed//60)}m{int(elapsed%60)}s")
     print(f"    Total: {len(urls):,} URLs from {len(subdomains):,} subdomains")
     print(f"    Processed: {total - failed}/{total} domains")
     if callback:
-        callback(f'[2/3] ✓ GAU: {len(urls):,} URLs from {len(subdomains):,} subdomains')
+        callback(f'[2/3] ✓ Waybackurls: {len(urls):,} URLs from {len(subdomains):,} subdomains')
 
     return output, len(urls), len(subdomains)
 
@@ -542,12 +541,12 @@ def run_wayback_cdx_fallback(input_file, output_dir, callback=None):
 
 def run_wayback_cdx(input_file, output_dir, callback=None):
     """
-    Main URL fetching function - uses GAU with CDX fallback.
+    Main URL fetching function - uses waybackurls with CDX fallback.
 
     Returns: (output_file, url_count, subdomain_count)
     """
-    # Try GAU first (faster, more sources)
-    return run_gau(input_file, output_dir, callback)
+    # Use waybackurls (stable, Wayback-only)
+    return run_waybackurls(input_file, output_dir, callback)
 
 
 # ============================================================================
